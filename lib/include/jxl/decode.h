@@ -114,9 +114,9 @@ JXL_EXPORT void JxlDecoderDestroy(JxlDecoder* dec);
 
 /**
  * Return value for JxlDecoderProcessInput.
- * The values from JXL_DEC_BASIC_INFO onwards are optional informative
- * events that can be subscribed to, they are never returned if they
- * have not been registered with JxlDecoderSubscribeEvents.
+ * The values from JXL_DEC_EXTENSIONS onwards are optional informal events
+ * that can be subscribed to, they are never returned if they have not been
+ * registered with JxlDecoderSubscribeEvents.
  */
 typedef enum {
   /** Function call finished successfully, or decoding is finished and there is
@@ -412,8 +412,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
  * transformation, but can cause wrong display of the image if the orientation
  * tag is not correctly taken into account by the user.
  *
- * By default, this option is disabled, and the returned pixel data is
- * re-oriented according to the image's Orientation setting.
+ * By default, this option is disabled, and the decoder respects the
+ * orientation setting provided by the image.
  *
  * This function must be called at the beginning, before decoding is performed.
  *
@@ -625,7 +625,7 @@ typedef enum {
  * alternative anyway. The following scenarios are possible:
  * - The JPEG XL image has an attached ICC Profile, in that case, the encoded
  *   structured data is not available, this function will return an error
- *   status. JxlDecoderGetColorAsICCProfile should be called instead.
+ * status. JxlDecoderGetColorAsICCProfile should be called instead.
  * - The JPEG XL image has an encoded structured color profile, and it
  *   represents an RGB or grayscale color space. This function will return it.
  *   You can still use JxlDecoderGetColorAsICCProfile as well as an
@@ -864,11 +864,7 @@ JXL_EXPORT JXL_DEPRECATED JxlDecoderStatus JxlDecoderSetDCOutBuffer(
 /**
  * Returns the minimum size in bytes of the image output pixel buffer for the
  * given format. This is the buffer for JxlDecoderSetImageOutBuffer. Requires
- * that the basic image information is available in the decoder in the case of
- * coalescing enabled (default). In case coalescing is disabled, this can only
- * be called after the JXL_DEC_FRAME event occurs. In that case, it will return
- * the size required to store the possibly cropped frame (which can be larger or
- * smaller than the image dimensions).
+ * that basic image information is available in the decoder.
  *
  * @param dec decoder object
  * @param format format of the pixels.
