@@ -131,6 +131,8 @@ set(JPEGXL_FORCE_NEON false CACHE BOOL
 
 
 # Force system dependencies.
+set(JPEGXL_FORCE_SYSTEM_ABSL false CACHE BOOL
+    "Force using system installed abseil-cpp instead of third_party/abseil-cpp source.")
 set(JPEGXL_FORCE_SYSTEM_BROTLI false CACHE BOOL
     "Force using system installed brotli instead of third_party/brotli source.")
 set(JPEGXL_FORCE_SYSTEM_GTEST false CACHE BOOL
