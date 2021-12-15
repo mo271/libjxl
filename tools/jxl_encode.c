@@ -149,7 +149,6 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Usage: %s {output_jxl_filename}\n", argv[0]);
     return EXIT_FAILURE;
   }
-
   fprintf(stderr, "Creating encoder.\n");
   JxlEncoder *jxl_encoder = JxlEncoderCreate(NULL);
 
