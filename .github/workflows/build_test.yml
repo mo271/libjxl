@@ -91,7 +91,6 @@ jobs:
           clang-7 \
           cmake \
           doxygen \
-          libabsl-dev \
           libbenchmark-dev \
           libbenchmark-tools \
           libbrotli-dev \
