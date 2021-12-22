@@ -156,7 +156,6 @@ endif()
 # gflags
 if (JPEGXL_BUNDLE_GFLAGS)
   # Compile gflags from sources.
-  set(GFLAGS_INTTYPES_FORMAT "C99")
   set(GFLAGS_BUILD_TESTING OFF)
   add_subdirectory(gflags)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/gflags/COPYING.txt"
