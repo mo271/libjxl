@@ -166,8 +166,8 @@ else()
   if (NOT gflags_FOUND)
     message(FATAL_ERROR
       "Gflags not found, install libgflags-dev or download gflags source to"
-      "third_party/abseil-cpp from https://github.com/gflags/gflags. You"
-      " can use ${PROJECT_SOURCE_DIR}/deps.sh to download the dependency.")
+      "third_partygflags from https://github.com/gflags/gflags. You can use"
+      " ${PROJECT_SOURCE_DIR}/deps.sh to download the dependency.")
   endif()
   if(JPEGXL_DEP_LICENSE_DIR)
     configure_file("${JPEGXL_DEP_LICENSE_DIR}/libgflags-dev/copyright"
