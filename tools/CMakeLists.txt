@@ -149,8 +149,7 @@ if(JPEGXL_ENABLE_TOOLS)
   target_link_libraries(cjxl_ng
     fetch_encoded
     jxl
-    absl::flags
-    absl::flags_parse
+    gflags
   )
 
 add_executable(cjpeg_hdr

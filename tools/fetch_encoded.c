@@ -1,12 +1,12 @@
-#include "jxl/encode.h"
 #include "fetch_encoded.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define DEBUG_BUFFER_REALLOCATION 0
+#include "jxl/encode.h"
 
+#define DEBUG_BUFFER_REALLOCATION 0
 
 JXL_BOOL fetch_jxl_encoded_image(JxlEncoder *jxl_encoder,
                                  uint8_t **compressed_buffer,
@@ -34,8 +34,7 @@ JXL_BOOL fetch_jxl_encoded_image(JxlEncoder *jxl_encoder,
   compressed_available = *compressed_buffer_size;
   compressed_ptr = *compressed_buffer;
   do {
-    process_result = JxlEncoderProcessOutput(jxl_encoder,
-                                             &compressed_ptr,
+    process_result = JxlEncoderProcessOutput(jxl_encoder, &compressed_ptr,
                                              &compressed_available);
     *compressed_buffer_used = compressed_ptr - *compressed_buffer;
     if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
@@ -66,18 +65,16 @@ JXL_BOOL fetch_jxl_encoded_image(JxlEncoder *jxl_encoder,
     success = JXL_TRUE;
   }
 
- cleanup:
+cleanup:
   if (compressed_buffer2 != NULL) {
     free(compressed_buffer2);
   }
   return success;
 }
 
-
-JXL_BOOL write_jxl_file(const uint8_t* bytes,
-                        size_t size,
-                        const char* filename) {
-  FILE* file = fopen(filename, "wb");
+JXL_BOOL write_jxl_file(const uint8_t *bytes, size_t size,
+                        const char *filename) {
+  FILE *file = fopen(filename, "wb");
   if (!file) {
     fprintf(stderr, "Could not open file for writing: %s\n", filename);
     return JXL_FALSE;

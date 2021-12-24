@@ -13,7 +13,7 @@
 #ifndef TOOLS_FETCH_ENCODED_H_
 #define TOOLS_FETCH_ENCODED_H_
 
-
+#include "jxl/encode.h"
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
 #endif
@@ -21,7 +21,6 @@ extern "C" {
 #include <stdint.h>
 
 #include "jxl/types.h"
-
 
 /* Fetches the encoded data from `jxl_encoder`.  If
    `*compressed_buffer` is non-NULL, *compressed_buffer_size must
@@ -41,11 +40,9 @@ JXL_BOOL fetch_jxl_encoded_image(JxlEncoder *jxl_encoder,
                                  size_t *compressed_buffer_size,
                                  size_t *compressed_buffer_used);
 
-
 /* Writes `size` many bytes from buffer `bytes` to the file named `filename`. */
-JXL_BOOL write_jxl_file(const uint8_t* bytes,
-                        size_t size,
-                        const char* filename);
+JXL_BOOL write_jxl_file(const uint8_t *bytes, size_t size,
+                        const char *filename);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

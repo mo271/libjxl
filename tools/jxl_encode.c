@@ -16,15 +16,13 @@
 #include "jxl/encode.h"
 #include "jxl/types.h"
 
-
 #define DDD_WIDTH 640
 #define DDD_HEIGHT 480
-
 
 /* This corresponds to: lib/jxl/encode.cc:JxlEncoderInitBasicInfo
    in the C++ API.
  */
-static void JxlBasicInfoInit(JxlBasicInfo* info) {
+static void JxlBasicInfoInit(JxlBasicInfo *info) {
   info->have_container = JXL_FALSE;
   info->xsize = 0;
   info->ysize = 0;
@@ -58,27 +56,25 @@ static void JxlBasicInfoInit(JxlBasicInfo* info) {
    On failure, returns JXL_FALSE and sets `*compressed_out`
    to NULL.
  */
-static JXL_BOOL fetch_encoded(JxlEncoder *jxl_encoder,
-                              uint8_t **compressed_out,
+static JXL_BOOL fetch_encoded(JxlEncoder *jxl_encoder, uint8_t **compressed_out,
                               size_t *compressed_size_out) {
-  JXL_BOOL success = JXL_TRUE;  
+  JXL_BOOL success = JXL_TRUE;
   uint8_t *compressed = NULL, *compressed2 = NULL, *compressed_ptr = NULL;
   size_t compressed_size = 64, compressed2_size = 0;
   size_t compressed_available = compressed_size;
   size_t compressed_used = 0;
   const size_t max_ok_size = (~(size_t)0) / 2;
-  
+
   *compressed_out = NULL;
   *compressed_size_out = 0;
-  
+
   if (NULL == (compressed = compressed_ptr = malloc(compressed_size))) {
     goto cleanup;
   }
-  
+
   JxlEncoderStatus process_result;
   do {
-    process_result = JxlEncoderProcessOutput(jxl_encoder,
-                                             &compressed_ptr,
+    process_result = JxlEncoderProcessOutput(jxl_encoder, &compressed_ptr,
                                              &compressed_available);
     compressed_used = compressed_ptr - compressed;
     if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
@@ -98,8 +94,8 @@ static JXL_BOOL fetch_encoded(JxlEncoder *jxl_encoder,
       compressed2 = NULL;
       compressed_ptr = &compressed[compressed_used];
       compressed_available = compressed_size - compressed_used;
-      fprintf(stderr, "Re-allocated to %zu bytes, %zu used.\n",
-              compressed_size, compressed_used);
+      fprintf(stderr, "Re-allocated to %zu bytes, %zu used.\n", compressed_size,
+              compressed_used);
     }
   } while (process_result == JXL_ENC_NEED_MORE_OUTPUT);
 
@@ -107,12 +103,12 @@ static JXL_BOOL fetch_encoded(JxlEncoder *jxl_encoder,
     fprintf(stderr, "JxlEncoderProcessOutput failed\n");
     goto cleanup;
   }
-  
+
   *compressed_out = compressed;
   compressed = NULL;
   *compressed_size_out = compressed_size;
-  
- cleanup:
+
+cleanup:
   if (compressed) {
     free(compressed);
     compressed = NULL;
@@ -124,11 +120,9 @@ static JXL_BOOL fetch_encoded(JxlEncoder *jxl_encoder,
   return success;
 }
 
-
-static JXL_BOOL write_file(const uint8_t* bytes,
-                           size_t size,
-                           const char* filename) {
-  FILE* file = fopen(filename, "wb");
+static JXL_BOOL write_file(const uint8_t *bytes, size_t size,
+                           const char *filename) {
+  FILE *file = fopen(filename, "wb");
   if (!file) {
     fprintf(stderr, "Could not open file for writing: %s\n", filename);
     return JXL_FALSE;
@@ -148,7 +142,6 @@ static JXL_BOOL write_file(const uint8_t* bytes,
   return JXL_TRUE;
 }
 
-
 int main(int argc, char **argv) {
   int success = EXIT_SUCCESS;
 
@@ -156,24 +149,22 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Usage: %s {output_jxl_filename}\n", argv[0]);
     return EXIT_FAILURE;
   }
-  
+
   fprintf(stderr, "Creating encoder.\n");
   JxlEncoder *jxl_encoder = JxlEncoderCreate(NULL);
 
   fprintf(stderr, "Encoder is at %p.\n", (void *)jxl_encoder);
 
-
   /* TODO(tfish): Replace allocating dummy-data here with actual image data. */
-  float* dummy_src = NULL;
+  float *dummy_src = NULL;
   uint8_t *compressed = NULL;
   size_t compressed_size;
 
-  if (NULL == (dummy_src = calloc(DDD_WIDTH * DDD_HEIGHT * 3,
-                                   sizeof(float)))) {
+  if (NULL == (dummy_src = calloc(DDD_WIDTH * DDD_HEIGHT * 3, sizeof(float)))) {
     goto cleanup;
   }
   fprintf(stderr, "Allocated dummy data at %p.\n", (void *)dummy_src);
-  
+
   JxlBasicInfo jxl_basic_info;
   JxlBasicInfoInit(&jxl_basic_info);
   jxl_basic_info.xsize = DDD_WIDTH;
@@ -186,25 +177,25 @@ int main(int argc, char **argv) {
     goto cleanup;
   }
   fprintf(stderr, "JxlEncoderSetBasicInfo done.\n");
-  
+
   JxlColorEncoding jxl_color_encoding;
-  JxlColorEncodingSetToSRGB(&jxl_color_encoding,/*is_gray=*/JXL_FALSE);
-  if (JXL_ENC_SUCCESS != JxlEncoderSetColorEncoding(jxl_encoder,
-                                                    &jxl_color_encoding)) {
+  JxlColorEncodingSetToSRGB(&jxl_color_encoding, /*is_gray=*/JXL_FALSE);
+  if (JXL_ENC_SUCCESS !=
+      JxlEncoderSetColorEncoding(jxl_encoder, &jxl_color_encoding)) {
     fprintf(stderr, "JxlEncoderSetColorEncoding failed\n");
     goto cleanup;
   }
   fprintf(stderr, "JxlEncoderSetColorEncoding done.\n");
-  
+
   JxlPixelFormat pixel_format = {3, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
   /* This is owned by the encoder. */
-  JxlEncoderOptions *jxl_encoder_options = JxlEncoderOptionsCreate(
-      jxl_encoder, NULL);
+  JxlEncoderOptions *jxl_encoder_options =
+      JxlEncoderOptionsCreate(jxl_encoder, NULL);
   fprintf(stderr, "JxlEncoderOptionsCreate done.\n");
-  
+
   if (JXL_ENC_SUCCESS !=
-      JxlEncoderAddImageFrame(jxl_encoder_options,
-                              &pixel_format, (void*)dummy_src,
+      JxlEncoderAddImageFrame(jxl_encoder_options, &pixel_format,
+                              (void *)dummy_src,
                               sizeof(float) * DDD_WIDTH * DDD_HEIGHT * 3)) {
     fprintf(stderr, "JxlEncoderAddImageFrame failed\n");
     goto cleanup;
@@ -216,12 +207,12 @@ int main(int argc, char **argv) {
     goto cleanup;
   }
 
-  if(!write_file(compressed, compressed_size, argv[1])) {
+  if (!write_file(compressed, compressed_size, argv[1])) {
     fprintf(stderr, "Writing output file failed: %s\n", argv[1]);
     success = EXIT_FAILURE;
   }
-  
- cleanup:
+
+cleanup:
   if (dummy_src) {
     free(dummy_src);
     dummy_src = NULL;
