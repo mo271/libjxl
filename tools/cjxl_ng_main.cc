@@ -2,7 +2,6 @@
 //
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
-
 #include <stdint.h>
 
 #include <iostream>
@@ -29,9 +28,8 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 
-DEFINE_bool(boolean_test_variable, false,
-            "Testing that adding a variable works.");
-
+DECLARE_bool(help);
+DECLARE_bool(helpshort);
 // The flag --version is owned by gflags itself.
 DEFINE_bool(encoder_version, false,
             "Print encoder library version number and exit.");
@@ -341,9 +339,10 @@ jxl::Status LoadInput(const char* filename_in,
 // tristate flag not necessary, because we can use
 // gflags::GetCommandLineFlagInfoOrDie(const char* name).is_default
 int main(int argc, char** argv) {
+
   gflags::SetUsageMessage(
       std::string("JPEG XL-encodes an image.\n") +
-      std::string(" Input format can be one of:") +
+      std::string(" Input format can be one of: ") +
 #if JPEGXL_ENABLE_APNG
       std::string("PNG, APNG, ") +
 #endif
@@ -362,14 +361,17 @@ int main(int argc, char** argv) {
                  << version % 1000 << std::endl;
 
   gflags::SetVersionString(version_string.str());
-  if (argc == 1) {
-    gflags::ShowUsageWithFlags(argv[0]);
-    exit(1);
+  gflags::ParseCommandLineNonHelpFlags(&argc, &argv,  /*remove_flags=*/true);
+  if (FLAGS_help) {
+    FLAGS_help = false;
+    FLAGS_helpshort = true;
   }
-  gflags::ParseCommandLineFlags(&argc, &argv, /*remove_flags=*/true);
+  gflags::HandleCommandLineHelpFlags();
 
   if (argc != 3) {
-    gflags::ShowUsageWithFlags(argv[0]);
+    FLAGS_help = false;
+    FLAGS_helpshort = true;
+    gflags::HandleCommandLineHelpFlags();
     return EXIT_FAILURE;
   }
   const char* filename_in = argv[1];
