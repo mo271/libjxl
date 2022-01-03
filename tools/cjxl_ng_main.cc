@@ -171,7 +171,7 @@ DEFINE_int32(photon_noise, 0,
           "As an example, a value of 100 gives low noise whereas a value "
           "of 3200 gives a lot of noise. The default value is 0.");
 
-DEFINE_float(distance, 1.0,  // TODO(tfish): wire this up.
+DEFINE_string(distance, "1.0",  // TODO(tfish): wire this up.
           "Max. butteraugli distance, lower = higher quality. Range: 0 .. 25.\n"
           "    0.0 = mathematically lossless. Default for already-lossy input "
           "(JPEG/GIF).\n"
@@ -183,11 +183,11 @@ DEFINE_int64(target_size, 0,  // TODO(tfish): wire this up.
           "    Compresses to 1 % of the target size in ideal conditions.\n"
           "    Runs the same algorithm as --target_bpp");
 
-DEFINE_float(target_bpp, 0,  // TODO(tfish): wire this up.
+DEFINE_string(target_bpp, "0",  // TODO(tfish): wire this up.
           "Aim at file size that has N bits per pixel.\n"
           "    Compresses to 1 % of the target BPP in ideal conditions.");
 
-DEFINE_float(quality, 100.0,  // TODO(tfish): wire this up.
+DEFINE_string(quality, "100.0",  // TODO(tfish): wire this up.
           "Quality setting (is remapped to --distance). Range: -inf .. 100.\n"
           "    100 = mathematically lossless. Default for already-lossy input "
           "(JPEG/GIF).\n    Positive quality values roughly match libjpeg "
@@ -253,8 +253,8 @@ int main(int argc, char** argv) {
   }
   gflags::ParseCommandLineFlags(&argc, &argv, /*remove_flags=*/true);
 
-  if (argv.size() != 3) {
-    std::cerr << gflags::ShowUsageWithFlags(agrv[0]) << std::endl;
+  if (argc != 3) {
+    gflags::ShowUsageWithFlags(argv[0]);
     return EXIT_FAILURE;
   }
   const char* filename_in = argv[1];
@@ -392,7 +392,7 @@ int main(int argc, char** argv) {
 
     JxlEncoderSetFrameDistance(
         jxl_encoder_frame_settings,
-        FLAGS_distance);
+        std::stof(FLAGS_distance));
 
     const int32_t flag_center_x = FLAGS_center_x;
     if (flag_center_x != -1) {
