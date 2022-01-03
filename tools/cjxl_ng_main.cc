@@ -76,7 +76,35 @@ DEFINE_bool(already_downsampled, false,
           "Do not downsample the given input before encoding, "
           "but still signal that the decoder should upsample.");
 
+DEFINE_bool(
+    modular, false,
+    // TODO(tfish): Flag up parameter meaning change.
+    "Use modular mode (not provided = encoder chooses, 0 = enforce VarDCT, "
+    "1 = enforce modular mode).");
 
+DEFINE_bool(keep_invisible, false,
+            "Force disable/enable preserving color of invisible "
+            "pixels. (not provided = default, 0 = disable, 1 = enable).");
+
+DEFINE_bool(dots, false,
+            "Force disable/enable dots generation. "
+            "(not provided = default, 0 = disable, 1 = enable).");
+
+DEFINE_bool(patches, false,
+            "Force disable/enable patches generation. "
+            "(not provided = default, 0 = disable, 1 = enable).");
+
+DEFINE_bool(gaborish, false,
+            "Force disable/enable the gaborish filter. "
+            "(not provided = default, 0 = disable, 1 = enable).");
+
+DEFINE_bool(
+    group_order, false,
+    // TODO(tfish): This is a new flag. Check with team.
+    "Order in which 256x256 regions are stored "
+    "in the codestream for progressive rendering. "
+    "Value not provided means 'encoder default', 0 means 'scanline order', "
+    "1 means 'center-first order'.");
 // TODO(tfish):
 // --intensity_target,
 // --saliency_num_progressive_steps, --saliency_map_filename,
@@ -104,34 +132,6 @@ DEFINE_int32(ec_resampling, -1,
           "for low quality. Value 1 does no downsampling (1x1), 2 does 2x2 "
           "downsampling, 4 is for 4x4 downsampling, and 8 for 8x8 downsampling."
           );
-
-DEFINE_int32(modular, -1,
-          // TODO(tfish): Flag up parameter meaning change.
-          "Use modular mode (-1 = encoder chooses, 0 = enforce VarDCT, "
-          "1 = enforce modular mode).");
-
-DEFINE_int32(keep_invisible, -1,
-          "Force disable/enable preserving color of invisible "
-          "pixels. (-1 = default, 0 = disable, 1 = enable).");
-
-DEFINE_int32(dots, -1,
-          "Force disable/enable dots generation. "
-          "(-1 = default, 0 = disable, 1 = enable).");
-
-DEFINE_int32(patches, -1,
-          "Force disable/enable patches generation. "
-          "(-1 = default, 0 = disable, 1 = enable).");
-
-DEFINE_int32(gaborish, -1,
-          "Force disable/enable the gaborish filter. "
-          "(-1 = default, 0 = disable, 1 = enable).");
-
-DEFINE_int32(group_order, -1,
-          // TODO(tfish): This is a new flag. Check with team.
-          "Order in which 256x256 regions are stored "
-          "in the codestream for progressive rendering. "
-          "Value -1 means 'encoder default', 0 means 'scanline order', "
-          "1 means 'center-first order'.");
 
 DEFINE_int32(epf, -1,
           "Edge preserving filter level, -1 to 3. "
@@ -233,6 +233,18 @@ class ManagedJxlEncoder {
   void* parallel_runner_ = nullptr;  // TODO(tfish): fix type.
 };
 
+bool ProcessTristateFlag(const char* flag_name, const bool flag_value,
+                         JxlEncoderFrameSettings* frame_settings,
+                         JxlEncoderFrameSettingId encoder_option) {
+  google::CommandLineFlagInfo flag_info =
+      gflags::GetCommandLineFlagInfoOrDie(flag_name);
+  if (!flag_info.is_default) {
+    JxlEncoderFrameSettingsSetOption(frame_settings, encoder_option,
+                                     static_cast<int32_t>(flag_value));
+  }
+  return true;
+}
+
 }  // namespace
 // tristate flag not necessary, because we can use
 // gflags::GetCommandLineFlagInfoOrDie(const char* name).is_default
@@ -293,9 +305,7 @@ int main(int argc, char** argv) {
       use_container = false;
     }
     JxlEncoderUseContainer(jxl_encoder, use_container);
-    /*
-    TODO(firsching): replace tristate flags by checking default 
-    values as described above.
+
     ProcessTristateFlag("modular", FLAGS_modular,
                         jxl_encoder_frame_settings,
                         JXL_ENC_FRAME_SETTING_MODULAR);
@@ -314,7 +324,7 @@ int main(int argc, char** argv) {
     ProcessTristateFlag("group_order", FLAGS_group_order,
                         jxl_encoder_frame_settings,
                         JXL_ENC_FRAME_SETTING_GROUP_ORDER);
-    */
+
     const int32_t flag_effort = FLAGS_effort;
     if (! (1 <= flag_effort && flag_effort <= 9)) {
       // Strictly speaking, custom absl flags-parsing would integrate
