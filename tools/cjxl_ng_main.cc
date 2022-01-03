@@ -9,7 +9,6 @@
 #include <sstream>
 #include <vector>
 
-#include "build/third_party/gflags/include/gflags/gflags.h"
 #include "fetch_encoded.h"
 #include "gflags/gflags.h"
 #include "jxl/codestream_header.h"
