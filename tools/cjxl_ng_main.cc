@@ -339,7 +339,7 @@ jxl::Status LoadInput(const char* filename_in,
 // tristate flag not necessary, because we can use
 // gflags::GetCommandLineFlagInfoOrDie(const char* name).is_default
 int main(int argc, char** argv) {
-
+  std::cerr <<  "\033[1;31mThis is work in progress, consider using cjxl instead!\033[0m\n";
   gflags::SetUsageMessage(
       std::string("JPEG XL-encodes an image.\n") +
       std::string(" Input format can be one of: ") +
