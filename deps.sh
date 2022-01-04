@@ -17,12 +17,8 @@ THIRD_PARTY_GFLAGS="827c769e5fc98e0f2a34c47cef953cc6328abced"
 THIRD_PARTY_HIGHWAY="e69083a12a05caf037cabecdf1b248b7579705a5"
 THIRD_PARTY_SKCMS="64374756e03700d649f897dbd98c95e78c30c7da"
 THIRD_PARTY_SJPEG="868ab558fad70fcbe8863ba4e85179eeb81cc840"
-<<<<<<< HEAD
 THIRD_PARTY_ZLIB="cacf7f1d4e3d44d871b605da3b647f07d718623f"
 THIRD_PARTY_LIBPNG="a40189cf881e9f0db80511c382292a5604c3c3d1"
-=======
-THIRD_PARTY_ABSEIL_CPP="master"
->>>>>>> 988b971 (cjxl_ng can now transcode basic .jpeg to basic .jxl.)
 
 # Download the target revision from GitHub.
 download_github() {
