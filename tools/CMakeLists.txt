@@ -121,10 +121,10 @@ endif()
 if(JPEGXL_ENABLE_TOOLS)
   list(APPEND TOOL_BINARIES
     cjxl
-    cjxl_ng    
+    cjxl_ng
     djxl
     cjpeg_hdr
-  )        
+  )
 
   # Main compressor.
   add_executable(cjxl
