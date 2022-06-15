@@ -107,6 +107,26 @@ HWY_NOINLINE void TestFastErf() {
   printf("max abs err %e\n", static_cast<double>(max_abs_err));
 }
 
+HWY_NOINLINE void TestCubeRoot() {
+  const HWY_FULL(float) d;
+  float max_err = 0.0f;
+  for (uint64_t x5 = 0; x5 < 2000000; x5++) {
+    const float x = x5 * 1E-5f;
+    const float expected = cbrtf(x);
+    HWY_ALIGN float approx[MaxLanes(d)];
+    Store(CubeRootAndAdd(Set(d, x), Zero(d)), d, approx);
+
+    // All lanes are same
+    for (size_t i = 1; i < Lanes(d); ++i) {
+      EXPECT_LE(std::abs(approx[0] - approx[i]), 5E-7f);
+    }
+
+    const float err = std::abs(approx[0] - expected);
+    max_err = std::max(max_err, err);
+  }
+  EXPECT_LT(max_err, 8E-7f);
+}
+
 HWY_NOINLINE void TestFastSRGB() {
   constexpr size_t kNumTrials = 1 << 23;
   Rng rng(1);
