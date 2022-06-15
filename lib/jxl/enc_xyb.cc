@@ -92,7 +92,6 @@ void TestCubeRoot() {
     const float err = std::abs(approx[0] - expected);
     max_err = std::max(max_err, err);
   }
-  // printf("max err %e\n", max_err);
   JXL_ASSERT(max_err < 8E-7f);
 }
 
