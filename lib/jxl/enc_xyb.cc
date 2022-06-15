@@ -86,7 +86,7 @@ void TestCubeRoot() {
 
     // All lanes are same
     for (size_t i = 1; i < Lanes(d); ++i) {
-      JXL_ASSERT(std::abs(approx[0] - approx[i]) <= 1.2E-7f);
+      JXL_ASSERT(std::abs(approx[0] - approx[i]) <= 5E-7f);
     }
 
     const float err = std::abs(approx[0] - expected);
