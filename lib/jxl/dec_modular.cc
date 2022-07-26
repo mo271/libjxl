@@ -491,8 +491,8 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
       }
       JXL_RETURN_IF_ERROR(
           ac_strategy.SetNoBoundsCheck(x, y, AcStrategy::Type(row_in_1[num])));
-      row_qf[ix] =
-          1 + std::max<int32_t>(0, std::min(Quantizer::kQuantMax - 1, row_in_2[num]));
+      row_qf[ix] = 1 + std::max<int32_t>(0, std::min(Quantizer::kQuantMax - 1,
+                                                     row_in_2[num]));
       num++;
     }
   }

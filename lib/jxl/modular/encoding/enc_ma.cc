@@ -723,7 +723,7 @@ void TreeSamples::ThreeShuffle(size_t a, size_t b, size_t c) {
 
 namespace {
 std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
-                                   size_t num_chunks) {
+                                       size_t num_chunks) {
   if (histogram.empty()) return {};
   // TODO(veluca): selecting distinct quantiles is likely not the best
   // way to go about this.
@@ -742,7 +742,7 @@ std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
 }
 
 std::vector<int32_t> QuantizeSamples(const std::vector<int32_t> &samples,
-                                 size_t num_chunks) {
+                                     size_t num_chunks) {
   if (samples.empty()) return {};
   int min = *std::min_element(samples.begin(), samples.end());
   constexpr int kRange = 512;
@@ -852,13 +852,13 @@ void TreeSamples::PreQuantizeProperties(
   auto quantize_wp = [&]() {
     if (max_property_values < 32) {
       return std::vector<int32_t>{-127, -63, -31, -15, -7, -3, -1, 0,
-                              1,    3,   7,   15,  31, 63, 127};
+                                  1,    3,   7,   15,  31, 63, 127};
     }
     if (max_property_values < 64) {
       return std::vector<int32_t>{-255, -191, -127, -95, -63, -47, -31, -23,
-                              -15,  -11,  -7,   -5,  -3,  -1,  0,   1,
-                              3,    5,    7,    11,  15,  23,  31,  47,
-                              63,   95,   127,  191, 255};
+                                  -15,  -11,  -7,   -5,  -3,  -1,  0,   1,
+                                  3,    5,    7,    11,  15,  23,  31,  47,
+                                  63,   95,   127,  191, 255};
     }
     return std::vector<int32_t>{
         -255, -223, -191, -159, -127, -111, -95, -79, -63, -55, -47,
