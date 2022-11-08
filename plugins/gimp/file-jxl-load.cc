@@ -76,7 +76,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
     return false;
   }
 
-  if (JXL_DEC_SUCCESS != JxlDecoderSetCoalescing(dec.get(), JXL_FALSE)) {
+  if (JXL_DEC_SUCCESS != JxlDecoderSetCoalescing(dec.get(), JXL_TRUE)) {
     g_printerr(LOAD_PROC " Error: JxlDecoderSetCoalescing failed\n");
     return false;
   }
