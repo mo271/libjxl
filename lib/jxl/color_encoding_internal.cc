@@ -13,7 +13,16 @@
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/jxl_cms_internal.h"
 #include "lib/jxl/matrix_ops.h"
+
+#if JPEGXL_ENABLE_SKCMS
+#include "lib/jxl/jxl_skcms.h"
+#else  // JPEGXL_ENABLE_SKCMS
+#include "lcms2.h"
+#include "lcms2_plugin.h"
+#endif  // JPEGXL_ENABLE_SKCMS
+
 
 namespace jxl {
 namespace {
@@ -201,6 +210,151 @@ Status ConvertExternalToInternalRenderingIntent(
   }
   return JXL_FAILURE("Invalid RenderingIntent enum value");
 }
+
+bool ApplyCICP(const uint8_t color_primaries,
+               const uint8_t transfer_characteristics,
+               const uint8_t matrix_coefficients, const uint8_t full_range,
+               ColorEncoding* JXL_RESTRICT c) {
+  if (matrix_coefficients != 0) return false;
+  if (full_range != 1) return false;
+
+  const auto primaries = static_cast<Primaries>(color_primaries);
+  const auto tf = static_cast<TransferFunction>(transfer_characteristics);
+  if (tf == TransferFunction::kUnknown || !EnumValid(tf)) return false;
+  if (primaries == Primaries::kCustom ||
+      !(color_primaries == 12 || EnumValid(primaries))) {
+    return false;
+  }
+  c->SetColorSpace(ColorSpace::kRGB);
+  c->tf.SetTransferFunction(tf);
+  if (primaries == Primaries::kP3) {
+    c->white_point = WhitePoint::kDCI;
+    c->primaries = Primaries::kP3;
+  } else if (color_primaries == 12) {
+    c->white_point = WhitePoint::kD65;
+    c->primaries = Primaries::kP3;
+  } else {
+    c->white_point = WhitePoint::kD65;
+    c->primaries = primaries;
+  }
+  return true;
+}
+
+
+#if JPEGXL_ENABLE_SKCMS
+
+ColorSpace ColorSpaceFromProfile(const skcms_ICCProfile& profile) {
+  switch (profile.data_color_space) {
+    case skcms_Signature_RGB:
+    case skcms_Signature_CMYK:
+      // spec says CMYK is encoded as RGB (the kBlack extra channel signals that
+      // it is actually CMYK)
+      return ColorSpace::kRGB;
+    case skcms_Signature_Gray:
+      return ColorSpace::kGray;
+    default:
+      return ColorSpace::kUnknown;
+  }
+}
+
+// vector_out := matmul(matrix, vector_in)
+void MatrixProduct(const skcms_Matrix3x3& matrix, const float vector_in[3],
+                   float vector_out[3]) {
+  for (int i = 0; i < 3; ++i) {
+    vector_out[i] = 0;
+    for (int j = 0; j < 3; ++j) {
+      vector_out[i] += matrix.vals[i][j] * vector_in[j];
+    }
+  }
+}
+
+
+#else  // JPEGXL_ENABLE_SKCMS
+
+uint32_t Type32(const ColorEncoding& c, bool cmyk) {
+  if (cmyk) return TYPE_CMYK_FLT;
+  if (c.IsGray()) return TYPE_GRAY_FLT;
+  return TYPE_RGB_FLT;
+}
+
+uint32_t Type64(const ColorEncoding& c) {
+  if (c.IsGray()) return TYPE_GRAY_DBL;
+  return TYPE_RGB_DBL;
+}
+
+ColorSpace ColorSpaceFromProfile(const Profile& profile) {
+  switch (cmsGetColorSpace(profile.get())) {
+    case cmsSigRgbData:
+    case cmsSigCmykData:
+      return ColorSpace::kRGB;
+    case cmsSigGrayData:
+      return ColorSpace::kGray;
+    default:
+      return ColorSpace::kUnknown;
+  }
+}
+
+// "profile1" is pre-decoded to save time in DetectTransferFunction.
+Status ProfileEquivalentToICC(const cmsContext context, const Profile& profile1,
+                              const PaddedBytes& icc, const ColorEncoding& c) {
+  const uint32_t type_src = Type64(c);
+
+  Profile profile2;
+  JXL_RETURN_IF_ERROR(DecodeProfile(context, icc, &profile2));
+
+  Profile profile_xyz;
+  JXL_RETURN_IF_ERROR(CreateProfileXYZ(context, &profile_xyz));
+
+  const uint32_t intent = INTENT_RELATIVE_COLORIMETRIC;
+  const uint32_t flags = cmsFLAGS_NOOPTIMIZE | cmsFLAGS_BLACKPOINTCOMPENSATION |
+                         cmsFLAGS_HIGHRESPRECALC;
+  Transform xform1(cmsCreateTransformTHR(context, profile1.get(), type_src,
+                                         profile_xyz.get(), TYPE_XYZ_DBL,
+                                         intent, flags));
+  Transform xform2(cmsCreateTransformTHR(context, profile2.get(), type_src,
+                                         profile_xyz.get(), TYPE_XYZ_DBL,
+                                         intent, flags));
+  if (xform1 == nullptr || xform2 == nullptr) {
+    return JXL_FAILURE("Failed to create transform");
+  }
+
+  double in[3];
+  double out1[3];
+  double out2[3];
+
+  // Uniformly spaced samples from very dark to almost fully bright.
+  const double init = 1E-3;
+  const double step = 0.2;
+
+  if (c.IsGray()) {
+    // Finer sampling and replicate each component.
+    for (in[0] = init; in[0] < 1.0; in[0] += step / 8) {
+      cmsDoTransform(xform1.get(), in, out1, 1);
+      cmsDoTransform(xform2.get(), in, out2, 1);
+      if (!ApproxEq(out1[0], out2[0], 2E-4)) {
+        return false;
+      }
+    }
+  } else {
+    for (in[0] = init; in[0] < 1.0; in[0] += step) {
+      for (in[1] = init; in[1] < 1.0; in[1] += step) {
+        for (in[2] = init; in[2] < 1.0; in[2] += step) {
+          cmsDoTransform(xform1.get(), in, out1, 1);
+          cmsDoTransform(xform2.get(), in, out2, 1);
+          for (size_t i = 0; i < 3; ++i) {
+            if (!ApproxEq(out1[i], out2[i], 2E-4)) {
+              return false;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
+#endif  // JPEGXL_ENABLE_SKCMS
 
 }  // namespace
 
@@ -571,6 +725,115 @@ Status ColorEncoding::VisitFields(Visitor* JXL_RESTRICT visitor) {
 
   return true;
 }
+
+
+Status ColorEncoding::SetFieldsFromICC() {
+  // In case parsing fails, mark the ColorEncoding as invalid.
+  SetColorSpace(ColorSpace::kUnknown);
+  tf.SetTransferFunction(TransferFunction::kUnknown);
+
+  if (icc_.empty()) return JXL_FAILURE("Empty ICC profile");
+
+#if JPEGXL_ENABLE_SKCMS
+  if (icc_.size() < 128) {
+    return JXL_FAILURE("ICC file too small");
+  }
+
+  skcms_ICCProfile profile;
+  JXL_RETURN_IF_ERROR(skcms_Parse(icc_.data(), icc_.size(), &profile));
+
+  // skcms does not return the rendering intent, so get it from the file. It
+  // is encoded as big-endian 32-bit integer in bytes 60..63.
+  uint32_t rendering_intent32 = icc_[67];
+  if (rendering_intent32 > 3 || icc_[64] != 0 || icc_[65] != 0 ||
+      icc_[66] != 0) {
+    return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
+  }
+  // ICC and RenderingIntent have the same values (0..3).
+  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
+
+  if (profile.has_CICP && ApplyCICP(profile.CICP.color_primaries,
+                                    profile.CICP.transfer_characteristics,
+                                    profile.CICP.matrix_coefficients,
+                                    profile.CICP.video_full_range_flag, this)) {
+    return true;
+  }
+
+  SetColorSpace(ColorSpaceFromProfile(profile));
+  cmyk_ = (profile.data_color_space == skcms_Signature_CMYK);
+
+  CIExy wp_unadapted;
+  JXL_RETURN_IF_ERROR(UnadaptedWhitePoint(profile, &wp_unadapted));
+  JXL_RETURN_IF_ERROR(SetWhitePoint(wp_unadapted));
+
+  // Relies on color_space.
+  JXL_RETURN_IF_ERROR(IdentifyPrimaries(profile, wp_unadapted, this));
+
+  // Relies on color_space/white point/primaries being set already.
+  DetectTransferFunction(profile, this);
+#else  // JPEGXL_ENABLE_SKCMS
+
+  const cmsContext context = GetContext();
+
+  Profile profile;
+  JXL_RETURN_IF_ERROR(DecodeProfile(context, icc_, &profile));
+
+  static constexpr size_t kCICPSize = 12;
+  static constexpr auto kCICPSignature =
+      static_cast<cmsTagSignature>(0x63696370);
+  uint8_t cicp_buffer[kCICPSize];
+  if (cmsReadRawTag(profile.get(), kCICPSignature, cicp_buffer, kCICPSize) ==
+          kCICPSize &&
+      ApplyCICP(cicp_buffer[8], cicp_buffer[9], cicp_buffer[10],
+                cicp_buffer[11], this)) {
+    return true;
+  }
+
+  const cmsUInt32Number rendering_intent32 =
+      cmsGetHeaderRenderingIntent(profile.get());
+  if (rendering_intent32 > 3) {
+    return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
+  }
+  // ICC and RenderingIntent have the same values (0..3).
+  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
+
+  SetColorSpace(ColorSpaceFromProfile(profile));
+  if (cmsGetColorSpace(profile.get()) == cmsSigCmykData) {
+    cmyk_ = true;
+    return true;
+  }
+
+  const cmsCIEXYZ wp_unadapted = UnadaptedWhitePoint(context, profile, *this);
+  JXL_RETURN_IF_ERROR(SetWhitePoint(CIExyFromXYZ(wp_unadapted)));
+
+  // Relies on color_space.
+  JXL_RETURN_IF_ERROR(IdentifyPrimaries(context, profile, wp_unadapted, this));
+
+  // Relies on color_space/white point/primaries being set already.
+  DetectTransferFunction(context, profile, this);
+
+#endif  // JPEGXL_ENABLE_SKCMS
+
+  return true;
+}
+
+void ColorEncoding::DecideIfWantICC() {
+  PaddedBytes icc_new;
+#if JPEGXL_ENABLE_SKCMS
+  skcms_ICCProfile profile;
+  if (!DecodeProfile(ICC().data(), ICC().size(), &profile)) return;
+  if (!MaybeCreateProfile(*this, &icc_new)) return;
+#else   // JPEGXL_ENABLE_SKCMS
+  const cmsContext context = GetContext();
+  Profile profile;
+  if (!DecodeProfile(context, ICC(), &profile)) return;
+  if (cmsGetColorSpace(profile.get()) == cmsSigCmykData) return;
+  if (!MaybeCreateProfile(*this, &icc_new)) return;
+#endif  // JPEGXL_ENABLE_SKCMS
+
+  want_icc_ = false;
+}
+
 
 void ConvertInternalToExternalColorEncoding(const ColorEncoding& internal,
                                             JxlColorEncoding* external) {
