@@ -5,6 +5,8 @@
 
 #include "lib/jxl/enc_color_management.h"
 
+#include "lib/jxl/color_encoding_internal.h"
+
 #ifndef JPEGXL_ENABLE_SKCMS
 #define JPEGXL_ENABLE_SKCMS 0
 #endif
@@ -30,7 +32,6 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/matrix_ops.h"
 #include "lib/jxl/transfer_functions-inl.h"
 #if JPEGXL_ENABLE_SKCMS
@@ -375,7 +376,7 @@ Status DecodeProfile(const uint8_t* icc, size_t size,
   }
   return true;
 }
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
 Status DecodeProfile(const cmsContext context, const PaddedBytes& icc,
                      Profile* profile) {
   profile->reset(cmsOpenProfileFromMemTHR(context, icc.data(), icc.size()));
@@ -931,50 +932,52 @@ bool ApplyCICP(const uint8_t color_primaries,
 
 }  // namespace
 
-Status ColorEncoding::SetFieldsFromICC() {
+Status SetFieldsFromICC(ColorEncoding& c_enc) {
   // In case parsing fails, mark the ColorEncoding as invalid.
-  SetColorSpace(ColorSpace::kUnknown);
-  tf.SetTransferFunction(TransferFunction::kUnknown);
+  c_enc.SetColorSpace(ColorSpace::kUnknown);
+  c_enc.tf.SetTransferFunction(TransferFunction::kUnknown);
 
-  if (icc_.empty()) return JXL_FAILURE("Empty ICC profile");
+  if (c_enc.icc_.empty()) return JXL_FAILURE("Empty ICC profile");
 
 #if JPEGXL_ENABLE_SKCMS
-  if (icc_.size() < 128) {
+  if (c_enc.icc_.size() < 128) {
     return JXL_FAILURE("ICC file too small");
   }
 
   skcms_ICCProfile profile;
-  JXL_RETURN_IF_ERROR(skcms_Parse(icc_.data(), icc_.size(), &profile));
+  JXL_RETURN_IF_ERROR(
+      skcms_Parse(c_enc.icc_.data(), c_enc.icc_.size(), &profile));
 
   // skcms does not return the rendering intent, so get it from the file. It
   // is encoded as big-endian 32-bit integer in bytes 60..63.
-  uint32_t rendering_intent32 = icc_[67];
-  if (rendering_intent32 > 3 || icc_[64] != 0 || icc_[65] != 0 ||
-      icc_[66] != 0) {
+  uint32_t rendering_intent32 = c_enc.icc_[67];
+  if (rendering_intent32 > 3 || c_enc.icc_[64] != 0 || c_enc.icc_[65] != 0 ||
+      c_enc.icc_[66] != 0) {
     return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
   }
   // ICC and RenderingIntent have the same values (0..3).
-  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
+  c_enc.rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
 
-  if (profile.has_CICP && ApplyCICP(profile.CICP.color_primaries,
-                                    profile.CICP.transfer_characteristics,
-                                    profile.CICP.matrix_coefficients,
-                                    profile.CICP.video_full_range_flag, this)) {
+  if (profile.has_CICP &&
+      ApplyCICP(profile.CICP.color_primaries,
+                profile.CICP.transfer_characteristics,
+                profile.CICP.matrix_coefficients,
+                profile.CICP.video_full_range_flag, &c_enc)) {
     return true;
   }
 
-  SetColorSpace(ColorSpaceFromProfile(profile));
-  cmyk_ = (profile.data_color_space == skcms_Signature_CMYK);
+  c_enc.SetColorSpace(ColorSpaceFromProfile(profile));
+  c_enc.cmyk_ = (profile.data_color_space == skcms_Signature_CMYK);
 
   CIExy wp_unadapted;
   JXL_RETURN_IF_ERROR(UnadaptedWhitePoint(profile, &wp_unadapted));
-  JXL_RETURN_IF_ERROR(SetWhitePoint(wp_unadapted));
+  JXL_RETURN_IF_ERROR(c_enc.SetWhitePoint(wp_unadapted));
 
   // Relies on color_space.
-  JXL_RETURN_IF_ERROR(IdentifyPrimaries(profile, wp_unadapted, this));
+  JXL_RETURN_IF_ERROR(IdentifyPrimaries(profile, wp_unadapted, &c_enc));
 
   // Relies on color_space/white point/primaries being set already.
-  DetectTransferFunction(profile, this);
+  DetectTransferFunction(profile, &c_enc);
 #else  // JPEGXL_ENABLE_SKCMS
 
   const cmsContext context = GetContext();
@@ -1019,23 +1022,6 @@ Status ColorEncoding::SetFieldsFromICC() {
 #endif  // JPEGXL_ENABLE_SKCMS
 
   return true;
-}
-
-void ColorEncoding::DecideIfWantICC() {
-  PaddedBytes icc_new;
-#if JPEGXL_ENABLE_SKCMS
-  skcms_ICCProfile profile;
-  if (!DecodeProfile(ICC().data(), ICC().size(), &profile)) return;
-  if (!MaybeCreateProfile(*this, &icc_new)) return;
-#else   // JPEGXL_ENABLE_SKCMS
-  const cmsContext context = GetContext();
-  Profile profile;
-  if (!DecodeProfile(context, ICC(), &profile)) return;
-  if (cmsGetColorSpace(profile.get()) == cmsSigCmykData) return;
-  if (!MaybeCreateProfile(*this, &icc_new)) return;
-#endif  // JPEGXL_ENABLE_SKCMS
-
-  want_icc_ = false;
 }
 
 namespace {
@@ -1124,7 +1110,7 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
     c_linear_src.tf.SetTransferFunction(TransferFunction::kLinear);
 #if JPEGXL_ENABLE_SKCMS
     skcms_ICCProfile new_src;
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
     Profile new_src;
 #endif  // JPEGXL_ENABLE_SKCMS
         // Only enable ExtraTF if profile creation succeeded.

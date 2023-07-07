@@ -222,3 +222,17 @@ install(TARGETS jxl_extras_codec
 else()
 add_library(jxl_extras_codec ALIAS jxl_extras_codec-static)
 endif()  # BUILD_SHARED_LIBS
+
+#TODO(lode): don't depend on CMS for the core library
+if (JPEGXL_ENABLE_SKCMS)
+  target_include_directories(jxl_extras_core_nocodec-obj PRIVATE
+    $<TARGET_PROPERTY:skcms,INCLUDE_DIRECTORIES>
+  )
+  target_include_directories(jxl_extras_core-obj PRIVATE
+    $<TARGET_PROPERTY:skcms,INCLUDE_DIRECTORIES>
+  )
+else ()
+  target_include_directories(jxl_extras_core_nocodec-obj PRIVATE
+    $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
+  )
+endif ()

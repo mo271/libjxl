@@ -10,6 +10,7 @@
 #include <array>
 #include <cmath>
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/fields.h"
@@ -418,6 +419,12 @@ Status ColorEncoding::SetPrimaries(const PrimariesCIExy& xy) {
 Status ColorEncoding::CreateICC() {
   InternalRemoveICC();
   return MaybeCreateProfile(*this, &icc_);
+}
+
+void ColorEncoding::DecideIfWantICC() {
+  PaddedBytes icc_new;
+  if (!MaybeCreateProfile(*this, &icc_new)) return;
+  want_icc_ = false;
 }
 
 std::string Description(const ColorEncoding& c_in) {

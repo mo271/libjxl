@@ -322,8 +322,6 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_cluster.h
   jxl/enc_coeff_order.cc
   jxl/enc_coeff_order.h
-  jxl/enc_color_management.cc
-  jxl/enc_color_management.h
   jxl/enc_comparator.cc
   jxl/enc_comparator.h
   jxl/enc_context_map.cc
@@ -424,6 +422,8 @@ set(JPEGXL_INTERNAL_EXTRAS_FOR_TOOLS_SOURCES
 )
 
 set(JPEGXL_INTERNAL_EXTRAS_SOURCES
+  jxl/enc_color_management.cc
+  jxl/enc_color_management.h
   extras/dec/color_description.cc
   extras/dec/color_description.h
   extras/dec/color_hints.cc

@@ -251,7 +251,7 @@ struct ColorEncoding : public Fields {
   // Returns true if `icc` is assigned and decoded successfully. If so,
   // subsequent WantICC() will return true until DecideIfWantICC() changes it.
   // Returning false indicates data has been lost.
-  Status SetICC(PaddedBytes&& icc) {
+  Status SetICC(PaddedBytes&& icc, ColorEncoding& c_enc) {
     if (icc.empty()) return false;
     icc_ = std::move(icc);
 
@@ -288,6 +288,7 @@ struct ColorEncoding : public Fields {
   // Causes WantICC() to return false if ICC() can be reconstructed from fields.
   // Defined in color_management.cc.
   void DecideIfWantICC();
+
 
   bool IsGray() const { return color_space_ == ColorSpace::kGray; }
   bool IsCMYK() const { return cmyk_; }
@@ -398,6 +399,8 @@ struct ColorEncoding : public Fields {
   RenderingIntent rendering_intent;
 
  private:
+  friend Status SetFieldsFromICC(ColorEncoding &c_enc);
+
   // Returns true if all fields have been initialized (possibly to kUnknown).
   // Returns false if the ICC profile is invalid or decoding it fails.
   // Defined in enc_color_management.cc.

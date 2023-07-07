@@ -85,6 +85,10 @@ class ColorSpaceTransform {
 
 const JxlCmsInterface& GetJxlCms();
 
+Status SetICC(PaddedBytes&& icc, ColorEncoding& c_enc);
+Status SetFieldsFromICC(ColorEncoding& c_enc);
+Status DecideIfWantICC(ColorEncoding& c_enc);
+
 }  // namespace jxl
 
 #endif  // LIB_JXL_ENC_COLOR_MANAGEMENT_H_
