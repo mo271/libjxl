@@ -22,4 +22,4 @@ jobs:
         git config --global user.email "${{ github.actor }}@users.noreply.github.com"
         git config --global user.name "${{ github.actor }}"
         git remote add gitlab "https://mo271:${{ secrets.GITLAB_MIRROR }}@gitlab.com/mo271/jpeg-xlm.git"
-        git push  gitlab BRANCH_NAME:BRANCH_NAME
+        git push  gitlab env.BRANCH_NAME:env.BRANCH_NAME
