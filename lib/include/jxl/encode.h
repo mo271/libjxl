@@ -659,26 +659,35 @@ struct JxlEncoderOutputProcessor {
    * TODO
    */
   void* opaque;
+
   /**
    * @brief
    * TODO
    *
+   * size of 0 = asked to stop
    */
-  void* (*get_buffer_at)(JxlEncoderOutputProcessor* output_processor,
-                         size_t pos, size_t num_bytes);
-  /**
-   * @brief
-   *
-   * TODO
-   */
-  void* (*get_required_buffer_at)(JxlEncoderOutputProcessor* output_processor,
-                                  size_t pos, size_t num_bytes);
+  void* (*get_buffer)(void* opaque, size_t* size);
+
   /**
    * @brief
    *
    * TODO
    */
-  void (*release_buffer)(JxlEncoderOutputProcessor* output_processor);
+  void (*release_buffer)(void* opaque, size_t written_bytes);
+
+  /**
+   * @brief
+   *
+   * Can only be done when there is no buffer.
+   */
+  void (*seek)(void* opaque, int64_t offset);
+
+  /**
+   * @brief
+   *
+   * TODO
+   */
+  void (*advance_watermark)(void* opaque, uint64_t offset);
 };
 
 /**
