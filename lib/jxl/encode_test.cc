@@ -3,13 +3,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <gtest/gtest.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <ostream>
+#include <vector>
 
+#include "gtest/gtest.h"
 #include "jxl/types.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
@@ -1409,35 +1414,108 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
 namespace {
 class JxlStreamingAdapter {
  public:
-  explicit JxlStreamingAdapter(JxlEncoder* encoder) {
-    EXPECT_EQ(JxlEncoderSetOutputCallback(
-        encoder, this,
-        [](void* self, size_t pos, const uint8_t* data, size_t num_bytes) {
-          static_cast<JxlStreamingAdapter*>(self)->OutputCallback(pos, data,
-                                                                  num_bytes);
-        }), JXL_ENC_SUCCESS);
+  JxlStreamingAdapter(JxlEncoder* encoder, bool return_large_buffers)
+      : return_large_buffers_(return_large_buffers) {
+    struct JxlEncoderOutputProcessor output_processor;
+    output_processor.opaque = this;
+    output_processor.get_buffer_at = [](JxlEncoderOutputProcessor* processor,
+                                        size_t pos, size_t size) {
+      return static_cast<JxlStreamingAdapter*>(processor->opaque)
+          ->GetBufferAt(pos, size);
+    };
+    output_processor.get_required_buffer_at =
+        [](JxlEncoderOutputProcessor* processor, size_t pos, size_t size) {
+          return static_cast<JxlStreamingAdapter*>(processor->opaque)
+              ->GetRequiredBufferAt(pos, size);
+        };
+    output_processor.release_buffer = [](JxlEncoderOutputProcessor* processor) {
+      return static_cast<JxlStreamingAdapter*>(processor->opaque)
+          ->ReleaseBuffer();
+    };
+    EXPECT_EQ(JxlEncoderSetOutputProcessor(encoder, output_processor),
+              JXL_ENC_SUCCESS);
   }
 
   const std::vector<uint8_t>& output() const { return output_; }
 
-  void OutputCallback(size_t pos, const uint8_t* data, size_t num_bytes) {
-    if (pos + num_bytes > output_.size()) {
-      output_.resize(pos + num_bytes);
+  void* GetBufferAt(size_t pos, size_t size) {
+    if (!return_large_buffers_) return nullptr;
+    return GetRequiredBufferAt(pos, size);
+  }
+
+  void* GetRequiredBufferAt(size_t pos, size_t size) {
+    if (output_.size() < pos + size) {
+      output_.resize(pos + size);
+      used_.resize(pos + size);
     }
-    memcpy(output_.data() + pos, data, num_bytes);
+    for (size_t i = pos; i < pos + size; i++) {
+      EXPECT_FALSE(used_[i]);
+      used_[i] = true;
+    }
+    return output_.data() + pos;
+  }
+
+  void ReleaseBuffer() {
+    // noop
   }
 
  private:
   std::vector<uint8_t> output_;
+  std::vector<bool> used_;
+  bool return_large_buffers_;
 };
 
-void TestOutputCallback(bool use_container) {
+struct OutputCallbackTestParam {
+  size_t bitmask;
+  bool use_container() const { return bitmask & 0x1; }
+  bool return_large_buffers() const { return bitmask & 0x2; }
+  bool multiple_frames() const { return bitmask & 0x4; }
+  bool fast_lossless() const { return bitmask & 0x8; }
+
+  static std::vector<OutputCallbackTestParam> All() {
+    std::vector<OutputCallbackTestParam> params;
+    for (size_t bitmask = 0; bitmask < 16; bitmask++) {
+      params.push_back(OutputCallbackTestParam{bitmask});
+    }
+    return params;
+  }
+};
+
+std::ostream& operator<<(std::ostream& out, OutputCallbackTestParam p) {
+  if (p.use_container()) {
+    out << "WithContainer";
+  } else {
+    out << "WithoutContainer";
+  }
+  if (p.return_large_buffers()) {
+    out << "WithLargeBuffers";
+  } else {
+    out << "WithSmallBuffers";
+  }
+  if (p.multiple_frames()) out << "WithMultipleFrames";
+  if (p.fast_lossless()) out << "FastLossless";
+  return out;
+}
+
+}  // namespace
+
+struct EncodeOutputCallbackTest
+    : public testing::Test,
+      public testing::WithParamInterface<OutputCallbackTestParam> {};
+
+TEST_P(EncodeOutputCallbackTest, OutputCallback) {
+  const OutputCallbackTestParam p = GetParam();
   size_t xsize = 257;
   size_t ysize = 259;
-  JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+  jxl::test::TestImage image;
+  image.SetDimensions(xsize, ysize)
+      .SetDataType(JXL_TYPE_UINT8)
+      .SetChannels(3)
+      .SetAllBitDepths(p.use_container() ? 16 : 8);
+  image.AddFrame().RandomFill();
+  const auto& frame = image.ppf().frames[0].color;
   JxlBasicInfo basic_info;
-  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
+  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &frame.format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
 
@@ -1448,20 +1526,31 @@ void TestOutputCallback(bool use_container) {
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+    if (p.fast_lossless()) {
+      JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
+      JxlEncoderFrameSettingsSetOption(frame_settings,
+                                       JXL_ENC_FRAME_SETTING_EFFORT, 1);
+    }
     EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
     JxlColorEncoding color_encoding;
     JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
-    if (use_container) {
+    if (p.use_container()) {
       JxlEncoderSetCodestreamLevel(enc.get(), 10);
+    }
+
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderAddImageFrame(frame_settings, &frame.format,
+                                      frame.pixels(), frame.pixels_size));
+    if (p.multiple_frames()) {
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderAddImageFrame(frame_settings, &frame.format,
+                                        frame.pixels(), frame.pixels_size));
     }
 
     uint8_t* next_out = compressed.data();
     size_t avail_out = compressed.size();
-    EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderAddImageFrame(frame_settings, &pixel_format,
-                                      pixels.data(), pixels.size()));
     JxlEncoderCloseFrames(enc.get());
     ProcessEncoder(enc.get(), compressed, next_out, avail_out);
   }
@@ -1469,28 +1558,32 @@ void TestOutputCallback(bool use_container) {
   {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     ASSERT_NE(nullptr, enc.get());
-    JxlStreamingAdapter streaming_adapter(enc.get());
+    JxlStreamingAdapter streaming_adapter(enc.get(), p.return_large_buffers());
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+    if (p.fast_lossless()) {
+      JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
+      JxlEncoderFrameSettingsSetOption(frame_settings,
+                                       JXL_ENC_FRAME_SETTING_EFFORT, 1);
+    }
     EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
     JxlColorEncoding color_encoding;
     JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+
     EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderAddImageFrame(frame_settings, &pixel_format,
-                                      pixels.data(), pixels.size()));
-    JxlEncoderCloseFrames(enc.get());
+              JxlEncoderAddImageFrame(frame_settings, &frame.format,
+                                      frame.pixels(), frame.pixels_size));
+    if (p.multiple_frames()) {
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderAddImageFrame(frame_settings, &frame.format,
+                                        frame.pixels(), frame.pixels_size));
+    }
     JxlEncoderCloseInput(enc.get());
     EXPECT_EQ(streaming_adapter.output(), compressed);
   }
 }
 
-}  // namespace
-
-TEST(EncodeTest, OutputCallbackTest) {
-  TestOutputCallback(/*use_container=*/false);
-}
-TEST(EncodeTest, OutputCallbackWithContainerTest) {
-  TestOutputCallback(/*use_container=*/true);
-}
+INSTANTIATE_TEST_SUITE_P(AllOptions, EncodeOutputCallbackTest,
+                         testing::ValuesIn(OutputCallbackTestParam::All()));

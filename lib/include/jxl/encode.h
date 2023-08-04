@@ -21,6 +21,7 @@
 #include <jxl/stats.h>
 #include <jxl/types.h>
 #include <jxl/version.h>
+
 #include <cstdint>
 
 #if defined(__cplusplus) || defined(c_plusplus)
@@ -646,12 +647,38 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
     const JxlEncoderFrameSettings* frame_settings,
     const JxlPixelFormat* pixel_format, const void* buffer, size_t size);
 
-
+/**
+ * @brief
+ *
+ * TODO
+ *
+ */
 struct JxlEncoderOutputProcessor {
-    void* opaque;
-    void* (*get_buffer_at)(JxlEncoderOutputProcessor* output_processor, size_t pos, size_t num_bytes);
-    void* (*get_required_buffer_at)(JxlEncoderOutputProcessor* output_processor, size_t pos, size_t num_bytes);
-    void (*release_buffer)(JxlEncoderOutputProcessor* output_processor, void* buffer);
+  /**
+   * @brief
+   * TODO
+   */
+  void* opaque;
+  /**
+   * @brief
+   * TODO
+   *
+   */
+  void* (*get_buffer_at)(JxlEncoderOutputProcessor* output_processor,
+                         size_t pos, size_t num_bytes);
+  /**
+   * @brief
+   *
+   * TODO
+   */
+  void* (*get_required_buffer_at)(JxlEncoderOutputProcessor* output_processor,
+                                  size_t pos, size_t num_bytes);
+  /**
+   * @brief
+   *
+   * TODO
+   */
+  void (*release_buffer)(JxlEncoderOutputProcessor* output_processor);
 };
 
 /**
