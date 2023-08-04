@@ -8,6 +8,9 @@
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
 
+#include <cstdint>
+
+#include "jxl/types.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/metrics.h"
@@ -1401,4 +1404,93 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
           3.5);
     }
   }
+}
+
+namespace {
+class JxlStreamingAdapter {
+ public:
+  explicit JxlStreamingAdapter(JxlEncoder* encoder) {
+    EXPECT_EQ(JxlEncoderSetOutputCallback(
+        encoder, this,
+        [](void* self, size_t pos, const uint8_t* data, size_t num_bytes) {
+          static_cast<JxlStreamingAdapter*>(self)->OutputCallback(pos, data,
+                                                                  num_bytes);
+        }), JXL_ENC_SUCCESS);
+  }
+
+  const std::vector<uint8_t>& output() const { return output_; }
+
+  void OutputCallback(size_t pos, const uint8_t* data, size_t num_bytes) {
+    if (pos + num_bytes > output_.size()) {
+      output_.resize(pos + num_bytes);
+    }
+    memcpy(output_.data() + pos, data, num_bytes);
+  }
+
+ private:
+  std::vector<uint8_t> output_;
+};
+
+void TestOutputCallback(bool use_container) {
+  size_t xsize = 257;
+  size_t ysize = 259;
+  JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+  JxlBasicInfo basic_info;
+  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
+  basic_info.xsize = xsize;
+  basic_info.ysize = ysize;
+
+  std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
+
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    ASSERT_NE(nullptr, enc.get());
+    JxlEncoderFrameSettings* frame_settings =
+        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+    JxlColorEncoding color_encoding;
+    JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+    if (use_container) {
+      JxlEncoderSetCodestreamLevel(enc.get(), 10);
+    }
+
+    uint8_t* next_out = compressed.data();
+    size_t avail_out = compressed.size();
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderAddImageFrame(frame_settings, &pixel_format,
+                                      pixels.data(), pixels.size()));
+    JxlEncoderCloseFrames(enc.get());
+    ProcessEncoder(enc.get(), compressed, next_out, avail_out);
+  }
+
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    ASSERT_NE(nullptr, enc.get());
+    JxlStreamingAdapter streaming_adapter(enc.get());
+    JxlEncoderFrameSettings* frame_settings =
+        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+    JxlColorEncoding color_encoding;
+    JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderAddImageFrame(frame_settings, &pixel_format,
+                                      pixels.data(), pixels.size()));
+    JxlEncoderCloseFrames(enc.get());
+    JxlEncoderCloseInput(enc.get());
+    EXPECT_EQ(streaming_adapter.output(), compressed);
+  }
+}
+
+}  // namespace
+
+TEST(EncodeTest, OutputCallbackTest) {
+  TestOutputCallback(/*use_container=*/false);
+}
+TEST(EncodeTest, OutputCallbackWithContainerTest) {
+  TestOutputCallback(/*use_container=*/true);
 }
