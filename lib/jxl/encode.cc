@@ -138,6 +138,7 @@ JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
   size_t alloc_size = requested_size;
   it++;
   if (it != internal_buffers_.end()) {
+    JXL_ASSERT(position_ < it->first);
     alloc_size = std::min(alloc_size, it->first - position_);
     JXL_ASSERT(alloc_size >= min_size);
   }
