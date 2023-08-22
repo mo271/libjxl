@@ -134,6 +134,9 @@ jobs:
         BUILD_TARGET: ${{ matrix.build_target }}
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@53a5c23a925969671a6bb98ea70a4f650928ef93 # v3.16
+      timeout-minutes: 300
+    - name: Sleep for 5 hours
+      run: sleep 18000
 
 
 
