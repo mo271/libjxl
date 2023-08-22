@@ -16,10 +16,10 @@ permissions:
 
 jobs:
   cross_compile_ubuntu:
-    name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.variant }} 
+    name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.variant }}
     runs-on: [ubuntu-22.04]
     container:
-      image: debian:bullseye
+      image: ubuntu:20.04
     strategy:
       fail-fast: false
       matrix:
