@@ -927,6 +927,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
         }
         size_t written = 0;
         while (true) {
+          fprintf(stderr, "fl_size : %zu, written: %zu\n", fl_size, written);
           JXL_ASSIGN_OR_RETURN(
               auto buffer, output_processor.GetBuffer(32, fl_size - written));
           size_t n = JxlFastLosslessWriteOutput(fast_lossless_frame.get(),
@@ -942,7 +943,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     if (MustUseContainer()) {
       if (last_frame && jxlp_counter == 0) {
         // If this is the last frame and no jxlp boxes were used yet, it's
-        // slighly more efficient to write a jxlc box since it has 4 bytes
+        // slightly more efficient to write a jxlc box since it has 4 bytes
         // less overhead.
         JXL_RETURN_IF_ERROR(
             AppendBox(jxl::MakeBoxType("jxlc"), /*unbounded=*/false,
