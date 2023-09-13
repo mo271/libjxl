@@ -172,6 +172,7 @@ void AppendBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
     box_size = size + 8;
     if (box_size >= 0x100000000ull) {
       large_size = true;
+      // fix: box_size += 8;
     }
   }
 
