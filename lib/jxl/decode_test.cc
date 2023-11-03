@@ -1825,7 +1825,7 @@ void SetPreferredColorProfileTest(
   std::vector<jxl::test::ColorEncodingDescriptor> some_encodings;
   some_encodings.push_back(all_encodings.back());
   size_t i = 0;
-  for (const auto& c1 : some_encodings) {
+  for (const auto& c1 : all_encodings) {
     fprintf(stderr, "i: %zu\n", i++);
     jxl::ColorEncoding c_out = jxl::test::ColorEncodingFromDescriptor(c1);
     float intensity_out = intensity_in;
