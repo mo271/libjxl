@@ -209,7 +209,7 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
       if (!linear) {
         auto to_linear_stage = GetToLinearStage(output_encoding_info);
         if (!to_linear_stage) {
-          if (!output_encoding_info.color_management_system) {
+          if (!output_encoding_info.cms_set) {
             return JXL_FAILURE("Cannot tonemap this colorspace without a CMS");
           }
           auto cms_stage = GetCmsStage(output_encoding_info);
@@ -235,8 +235,7 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
           (channels_src == channels_dst ||
            (channels_src == 4 && channels_dst == 3));
       if (output_encoding_info.color_encoding_is_original ||
-          output_encoding_info.color_management_system == nullptr ||
-          not_mixing_color_and_grey) {
+          !output_encoding_info.cms_set || not_mixing_color_and_grey) {
         builder.AddStage(GetFromLinearStage(output_encoding_info));
       } else {
         if (!output_encoding_info.linear_color_encoding.CreateICC()) {
