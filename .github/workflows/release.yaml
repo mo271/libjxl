@@ -295,12 +295,13 @@ jobs:
         mv vcpkg-${VCPKG_VERSION} ${VCPKG_ROOT}
         ${VCPKG_ROOT}/bootstrap-vcpkg.sh
 
-    - name: Update vcpkg
+    - name: Update vcpkg portfiles
       if: steps.cache-vcpkg.outputs.cache-hit != 'true'
       shell: 'bash'
       run: |
         set -x
-        ${VCPKG_ROOT}/vcpkg update
+        cd ${VCPKG_ROOT}
+        git pull
 
     - name: Install libraries with vcpkg
       shell: 'bash'
