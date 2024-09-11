@@ -7,7 +7,10 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cstdio>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/ac_context.h"
@@ -56,6 +59,10 @@ Status DecodeBlockCtxMap(JxlMemoryManager* memory_manager, BitReader* br,
   if (block_ctx_map->num_ctxs > 16) {
     return JXL_FAILURE("Invalid block context map: too many distinct contexts");
   }
+  for (size_t i = 0; i < 100 && i < block_ctx_map->ctx_map.size(); ++i){
+    fprintf(stderr, "%02X", block_ctx_map->ctx_map[i]);
+  }
+  fprintf(stderr, " <--- ctx_map\n");
   return true;
 }
 

@@ -1411,6 +1411,8 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
                                                 xsize, extra.format,
                                                 ec_bits_per_sample);
         }
+
+
       }
 
       size_t next_num_passes_to_pause = dec->frame_dec->NextNumPassesToPause();

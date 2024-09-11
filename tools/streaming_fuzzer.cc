@@ -14,8 +14,14 @@
 #include <jxl/types.h>
 
 #include <cstdint>
+#include <functional>
+#include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <cstring>
+#include <hwy/targets.h>
+#include <iostream>
+#include <random>
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
@@ -110,7 +116,9 @@ struct FuzzSpec {
     auto u16 = [&]() -> uint16_t { return (uint16_t{u8()} << 8) | u8(); };
     FuzzSpec spec;
     spec.xsize = uint32_t{u16()} + 1;
+    spec.xsize =2049;
     spec.ysize = uint32_t{u16()} + 1;
+    spec.ysize = 1;
     constexpr uint64_t kMaxSize = 1 << 24;
     if (spec.xsize * uint64_t{spec.ysize} > kMaxSize) {
       spec.ysize = kMaxSize / spec.xsize;
@@ -118,6 +126,7 @@ struct FuzzSpec {
     spec.grayscale = b1();
     spec.alpha = b1();
     spec.bit_depth = u8() % 16 + 1;
+    spec.bit_depth = 8;
     // constants chosen so to cover the entire 0.01 - 25 range.
     spec.distance = u8() % 2 ? 0.0 : 0.01 + 0.00038132 * u16();
 
@@ -129,24 +138,49 @@ struct FuzzSpec {
     }
 
     spec.num_threads = u8();
-
-    for (auto& int_opt : spec.int_options) {
-      int_opt.value = u8() % (int_opt.max - int_opt.min + 1) + int_opt.min;
+    spec.num_threads = 1;
+    for (size_t i=0; i < spec.int_options.size(); ++i){
+      auto& int_opt = spec.int_options[i];
+      size_t val = (u8() % (int_opt.max - int_opt.min + 1)) + int_opt.min;
+      int_opt.value = (i > 0) ? int_opt.min : val;
     }
     for (auto& float_opt : spec.float_options) {
       float_opt.value = float_opt.possible_values[u8() % 4];
     }
-
+    uint16_t c = 3;
     for (auto& x : spec.pixel_data) {
       for (auto& y : x) {
         for (auto& p : y) {
-          p = u16();
+          p = 0;
         }
       }
     }
-
+    spec.pixel_data[0][0][0]=c;
+    spec.PrintDebugInfo();
     return spec;
   }
+void PrintDebugInfo() const {
+    std::cout << "FuzzSpec Debug Information:\n";
+    std::cout << "  xsize: " << xsize << std::endl;
+    std::cout << "  ysize: " << ysize << std::endl;
+    std::cout << "  grayscale: " << (grayscale ? "true" : "false") << std::endl;
+    std::cout << "  alpha: " << (alpha ? "true" : "false") << std::endl;
+    std::cout << "  bit_depth: " << static_cast<int>(bit_depth) << std::endl;
+    std::cout << "  distance: " << distance << std::endl;
+    std::cout << "  num_threads: " << static_cast<int>(num_threads) << std::endl;
+
+    std::cout << "  int_options:\n";
+    for (const auto& int_opt : int_options) {
+        std::cout << "    flag: " << int_opt.flag
+                  << ", value: " << int_opt.value << std::endl;
+    }
+
+    std::cout << "  float_options:\n";
+    for (const auto& float_opt : float_options) {
+        std::cout << "    flag: " << float_opt.flag
+                  << ", value: " << float_opt.value << std::endl;
+    }
+}
 };
 
 StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
@@ -257,7 +291,10 @@ StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
   }
   Check(process_result == JXL_ENC_SUCCESS);
   buf.resize(written);
-
+  for (size_t i=0; i < 100; ++i){
+    fprintf(stderr, "%02X", buf[i]);
+  }
+  fprintf(stderr, "\n");
   return buf;
 }
 
@@ -282,6 +319,7 @@ StatusOr<std::vector<float>> Decode(const std::vector<uint8_t>& data,
 
     if (status == JXL_DEC_BASIC_INFO) {
       Check(JxlDecoderGetBasicInfo(dec.get(), &info) == JXL_DEC_SUCCESS);
+      fprintf(stderr, "xsize: %u, ysize:%u\n", info.xsize, info.ysize);
     } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
       size_t buffer_size;
       Check(JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size) ==
@@ -305,6 +343,45 @@ StatusOr<std::vector<float>> Decode(const std::vector<uint8_t>& data,
   }
 }
 
+
+void WritePFM(const std::string& filename, const std::vector<float>& buffer, int xsize, int ysize, int channel) {
+    // Open the file in binary mode
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        fprintf(stderr, "Failed to open file %s for writing\n", filename.c_str());
+        return;
+    }
+
+    // Write the PFM header (grayscale image with 1 channel)
+    file << "Pf\n";  // 'Pf' indicates grayscale float format
+    file << xsize << " " << ysize << "\n";
+    file << "-1.0\n";  // -1.0 indicates little-endian float format
+
+    // Calculate the starting index based on the channel
+    size_t channel_offset = channel * xsize * ysize;
+
+    // Write the buffer for the selected channel to the file
+    for (int y = 0; y < ysize; ++y) {
+        for (int x = 0; x < xsize; ++x) {
+            float value = buffer[channel_offset + y * xsize + x];
+            file.write(reinterpret_cast<const char*>(&value), sizeof(float));
+        }
+    }
+
+    file.close();
+}
+
+
+std::vector<float> ComputeDifference(const std::vector<float>& buffer1, const std::vector<float>& buffer2) {
+    std::vector<float> diff(buffer1.size());
+
+    for (size_t i = 0; i < buffer1.size(); ++i) {
+        diff[i] = std::abs(buffer1[i] - buffer2[i]) * 100;
+    }
+
+    return diff;
+}
+
 Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
   std::vector<uint8_t> enc_default;
   std::vector<uint8_t> enc_streaming;
@@ -316,6 +393,7 @@ Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
     JXL_ASSIGN_OR_RETURN(enc_streaming, Encode(spec, memory_manager, true));
     Check(memory_manager.Reset());
     return true;
+    fprintf(stderr, "end_default == endc_streaming: %d\n", enc_default == enc_streaming);
   };
   // It is fine, if encoder OOMs.
   if (!encode()) return true;
@@ -325,6 +403,34 @@ Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
   Check(memory_manager.Reset());
   JXL_ASSIGN_OR_RETURN(auto dec_streaming,
                        Decode(enc_streaming, memory_manager));
+
+  fprintf(stderr, "dec_default == dec_streaming: %d\n", dec_default == dec_streaming);
+  fprintf(stderr, "dec_default.size(): %zu, dec_streaming.size(): %zu\n", dec_default.size(), dec_streaming.size());
+  const int xsize = 2049;
+  const int ysize = 1;
+  auto diff = ComputeDifference(dec_default, dec_streaming);
+
+  // Writing dec_default and dec_streaming as grayscale PFM images
+  for (int channel = 0; channel < 3; ++channel) {
+      std::string filename_default = "/tmp/debug_image_default_" + std::to_string(channel) + ".pfm";
+      std::string filename_streaming = "/tmp/debug_image_streaming_" + std::to_string(channel) + ".pfm";
+      std::string filename_diff = "/tmp/debug_image_diff_" + std::to_string(channel) + ".pfm";
+
+      // Write dec_default for the current channel
+      WritePFM(filename_default, dec_default, xsize, ysize, channel);
+      // Write dec_streaming for the current channel
+      WritePFM(filename_streaming, dec_streaming, xsize, ysize, channel);
+      WritePFM(filename_diff, diff, xsize, ysize, channel);
+      //fprintf(stderr, "Written channel %d for both default and streaming encodings.\n", channel);
+  }
+  for (size_t i = 0; i < dec_default.size(); ++i){
+    if (dec_default[i]!=dec_streaming[i])
+    fprintf(stderr, "at index %zu, (%f,%f)\n", i, dec_default[i], dec_streaming[i]);
+  }
+  fprintf(stderr, "\n");
+  if (dec_default != dec_streaming) {
+    fprintf(stderr, "the fuzzer to go boom next!\n");
+  }
   Check(memory_manager.Reset());
 
   Check(dec_default == dec_streaming);

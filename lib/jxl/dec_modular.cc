@@ -7,7 +7,9 @@
 
 #include <jxl/memory_manager.h>
 
-#include <cstdint>
+#include <atomic>
+#include <cstddef>
+#include <sstream>
 #include <vector>
 
 #include "lib/jxl/frame_header.h"
@@ -180,6 +182,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
                                              const FrameHeader& frame_header,
                                              bool allow_truncated_group) {
   JxlMemoryManager* memory_manager = this->memory_manager();
+  fprintf(stderr, "in DecodeGlobalInfo\n");
   bool decode_color = frame_header.encoding == FrameEncoding::kModular;
   const auto& metadata = frame_header.nonserialized_metadata->m;
   bool is_gray = metadata.color_encoding.IsGray();

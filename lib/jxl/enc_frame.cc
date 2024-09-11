@@ -1268,7 +1268,10 @@ Status EncodeGroups(const FrameHeader& frame_header,
                      : AcGroupIndex(0, 0, num_groups, frame_dim.num_dc_groups) +
                            num_groups * num_passes;
   JXL_ENSURE(group_codes->empty());
-  group_codes->reserve(num_toc_entries);
+  fprintf(stderr, "group_codes.size before: %zu and num_groups = %zu, frame_dim.num_dc_groups = %zu, num_passs = %zu\n",
+    group_codes->size(), num_groups, frame_dim.num_dc_groups, num_passes);
+  group_codes->reserve(num_toc_entries);  fprintf(stderr, " group_codes.size after: %zu\n", group_codes->size());
+
   for (size_t i = 0; i < num_toc_entries; ++i) {
     group_codes->emplace_back(jxl::make_unique<BitWriter>(memory_manager));
   }
