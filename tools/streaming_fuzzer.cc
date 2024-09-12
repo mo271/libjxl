@@ -13,9 +13,13 @@
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <hwy/targets.h>
+#include <iostream>
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
@@ -110,7 +114,9 @@ struct FuzzSpec {
     auto u16 = [&]() -> uint16_t { return (uint16_t{u8()} << 8) | u8(); };
     FuzzSpec spec;
     spec.xsize = uint32_t{u16()} + 1;
+    spec.xsize = 2049;
     spec.ysize = uint32_t{u16()} + 1;
+    spec.ysize = 1;
     constexpr uint64_t kMaxSize = 1 << 24;
     if (spec.xsize * uint64_t{spec.ysize} > kMaxSize) {
       spec.ysize = kMaxSize / spec.xsize;
@@ -129,23 +135,47 @@ struct FuzzSpec {
     }
 
     spec.num_threads = u8();
-
-    for (auto& int_opt : spec.int_options) {
-      int_opt.value = u8() % (int_opt.max - int_opt.min + 1) + int_opt.min;
+    spec.num_threads = 1;
+    for (size_t i = 0; i < spec.int_options.size(); ++i) {
+      auto& int_opt = spec.int_options[i];
+      size_t val = (u8() % (int_opt.max - int_opt.min + 1)) + int_opt.min;
+      int_opt.value = (i > 0) ? int_opt.min : val;
     }
     for (auto& float_opt : spec.float_options) {
       float_opt.value = float_opt.possible_values[u8() % 4];
     }
-
     for (auto& x : spec.pixel_data) {
       for (auto& y : x) {
         for (auto& p : y) {
-          p = u16();
+          p = 0;
         }
       }
     }
-
+    spec.PrintDebugInfo();
     return spec;
+  }
+  void PrintDebugInfo() const {
+    std::cout << "FuzzSpec Debug Information:\n";
+    std::cout << "  xsize: " << xsize << std::endl;
+    std::cout << "  ysize: " << ysize << std::endl;
+    std::cout << "  grayscale: " << (grayscale ? "true" : "false") << std::endl;
+    std::cout << "  alpha: " << (alpha ? "true" : "false") << std::endl;
+    std::cout << "  bit_depth: " << static_cast<int>(bit_depth) << std::endl;
+    std::cout << "  distance: " << distance << std::endl;
+    std::cout << "  num_threads: " << static_cast<int>(num_threads)
+              << std::endl;
+
+    std::cout << "  int_options:\n";
+    for (const auto& int_opt : int_options) {
+      std::cout << "    flag: " << int_opt.flag << ", value: " << int_opt.value
+                << std::endl;
+    }
+
+    std::cout << "  float_options:\n";
+    for (const auto& float_opt : float_options) {
+      std::cout << "    flag: " << float_opt.flag
+                << ", value: " << float_opt.value << std::endl;
+    }
   }
 };
 
@@ -229,6 +259,7 @@ StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
       }
     }
   }
+  pixels[0] = 65535;
   JxlEncoderStatus status =
       JxlEncoderAddImageFrame(frame_settings, &pixelformat, pixels.data(),
                               pixels.size() * sizeof(uint16_t));
@@ -257,7 +288,10 @@ StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
   }
   Check(process_result == JXL_ENC_SUCCESS);
   buf.resize(written);
-
+  for (size_t i = 0; i < 100; ++i) {
+    fprintf(stderr, "%02X", buf[i]);
+  }
+  fprintf(stderr, "\n");
   return buf;
 }
 
@@ -282,6 +316,7 @@ StatusOr<std::vector<float>> Decode(const std::vector<uint8_t>& data,
 
     if (status == JXL_DEC_BASIC_INFO) {
       Check(JxlDecoderGetBasicInfo(dec.get(), &info) == JXL_DEC_SUCCESS);
+      fprintf(stderr, "xsize: %u, ysize:%u\n", info.xsize, info.ysize);
     } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
       size_t buffer_size;
       Check(JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size) ==
@@ -305,6 +340,15 @@ StatusOr<std::vector<float>> Decode(const std::vector<uint8_t>& data,
   }
 }
 
+std::vector<float> ComputeDifference(const std::vector<float>& buffer1,
+                                     const std::vector<float>& buffer2) {
+  std::vector<float> diff(buffer1.size());
+  for (size_t i = 0; i < buffer1.size(); ++i) {
+    diff[i] = std::abs(buffer1[i] - buffer2[i]);
+  }
+  return diff;
+}
+
 Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
   std::vector<uint8_t> enc_default;
   std::vector<uint8_t> enc_streaming;
@@ -316,6 +360,8 @@ Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
     JXL_ASSIGN_OR_RETURN(enc_streaming, Encode(spec, memory_manager, true));
     Check(memory_manager.Reset());
     return true;
+    fprintf(stderr, "end_default == endc_streaming: %d\n",
+            enc_default == enc_streaming);
   };
   // It is fine, if encoder OOMs.
   if (!encode()) return true;
@@ -325,6 +371,19 @@ Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
   Check(memory_manager.Reset());
   JXL_ASSIGN_OR_RETURN(auto dec_streaming,
                        Decode(enc_streaming, memory_manager));
+  auto diff = ComputeDifference(dec_default, dec_streaming);
+  float delta = *std::max_element(diff.begin(), diff.end());
+  fprintf(stderr, "dec_default == dec_streaming: %d, max diff: %lf \n",
+          dec_default == dec_streaming, delta);
+  fprintf(stderr, "dec_default.size(): %zu, dec_streaming.size(): %zu\n",
+          dec_default.size(), dec_streaming.size());
+
+  for (size_t i = 0; i < dec_default.size(); ++i) {
+    if (dec_default[i] != dec_streaming[i]) {
+      fprintf(stderr, "not equal at index %zu, (%f,%f)\n", i, dec_default[i],
+              dec_streaming[i]);
+    }
+  }
   Check(memory_manager.Reset());
 
   Check(dec_default == dec_streaming);
