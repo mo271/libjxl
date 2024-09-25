@@ -375,8 +375,8 @@ jobs:
     - name: Package release zip
       if: github.event_name == 'release'
       run: |
-      cd prefix
-      C:\"Program Files"\7-Zip\7z.exe a ../jxl-${{matrix.triplet}}.7z bin/* lib/*
+        cd prefix
+        C:\"Program Files"\7-Zip\7z.exe a ../jxl-${{matrix.triplet}}.7z bin/* lib/*
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
