@@ -13,6 +13,7 @@
 
 #include <jxl/codestream_header.h>
 #include <jxl/encode.h>
+#include <jxl/encode_cxx.h>
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
@@ -986,239 +987,38 @@ struct JxlOutputProcessor {
 }  // namespace tools
 }  // namespace jpegxl
 
-int main(int argc, char** argv) {
-  std::string version = jpegxl::tools::CodecConfigString(JxlEncoderVersion());
-  jpegxl::tools::CompressArgs args;
-  jpegxl::tools::CommandLineParser cmdline;
-  args.AddCommandLineOptions(&cmdline);
+int main(int, char**) {
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  JxlPixelFormat pixel_format = {1, JXL_TYPE_UINT16, JXL_NATIVE_ENDIAN, 0};
+  JxlBasicInfo basic_info;
+  JxlEncoderInitBasicInfo(&basic_info);
+  basic_info.xsize = 1;
+  basic_info.ysize = 1;
+  basic_info.bits_per_sample = 16;
+  basic_info.uses_original_profile = JXL_TRUE;
+  basic_info.num_color_channels = pixel_format.num_channels;
+  if (JXL_ENC_SUCCESS != JxlEncoderSetBasicInfo(enc.get(), &basic_info))
+    abort();
 
-  if (!cmdline.Parse(argc, const_cast<const char**>(argv))) {
-    // Parse already printed the actual error cause.
-    fprintf(stderr, "Use '%s -h' for more information\n", argv[0]);
-    return jpegxl::tools::CjxlRetCode::ERR_PARSE;
-  }
+  JxlColorEncoding color_encoding = {};
+  JXL_BOOL is_gray = TO_JXL_BOOL(pixel_format.num_channels < 3);
+  JxlColorEncodingSetToSRGB(&color_encoding, is_gray);
+  if (JXL_ENC_SUCCESS != JxlEncoderSetColorEncoding(enc.get(), &color_encoding))
+    abort();
+  JxlEncoderFrameSettings* f =
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+  if (JXL_ENC_SUCCESS !=
+      JxlEncoderFrameSettingsSetOption(f, JXL_ENC_FRAME_SETTING_EFFORT, 8))
+    abort();
+  if (JXL_ENC_SUCCESS != JxlEncoderSetFrameLossless(f, JXL_TRUE)) abort();
+  uint16_t pixels = 1020;
+  if (JXL_ENC_SUCCESS != JxlEncoderAddImageFrame(f, &pixel_format, &pixels, 16))
+    abort();
+  JxlEncoderCloseInput(enc.get());
 
-  if (args.version) {
-    fprintf(stdout, "cjxl %s\n", version.c_str());
-    fprintf(stdout, "Copyright (c) the JPEG XL Project\n");
-    return jpegxl::tools::CjxlRetCode::OK;
-  }
-
-  if (!args.quiet) {
-    fprintf(stderr, "JPEG XL encoder %s\n", version.c_str());
-  }
-
-  if (cmdline.HelpFlagPassed() || !args.file_in) {
-    cmdline.PrintHelp();
-    return jpegxl::tools::CjxlRetCode::OK;
-  }
-
-  if (!args.file_out && !args.disable_output) {
-    std::cerr
-        << "No output file specified and --disable_output flag not passed.\n";
-    exit(EXIT_FAILURE);
-  }
-
-  if (args.file_out && args.disable_output && !args.quiet) {
-    fprintf(stderr,
-            "Encoding will be performed, but the result will be discarded.\n");
-  }
-
-  jxl::extras::JXLCompressParams params;
-  jxl::extras::PackedPixelFile ppf;
-  jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
-  std::vector<uint8_t> image_data;
-  std::vector<uint8_t>* jpeg_bytes = nullptr;
-  size_t input_bytes = 0;
-  double decode_mps = 0;
-  size_t pixels = 0;
-  bool try_non_streaming = true;
-  jxl::extras::ChunkedPNMDecoder pnm_dec;
-  if (args.streaming_input) {
-    bool ok = [&]() -> jxl::Status {
-      JXL_ASSIGN_OR_RETURN(pnm_dec,
-                           jxl::extras::ChunkedPNMDecoder::Init(args.file_in));
-      return true;
-    }();
-    if (!ok) {
-      std::cerr << "Warning PPM/PGM streaming decoding failed, trying "
-                   "non-streaming mode.\n";
-    } else {  // ok
-      if (!pnm_dec.InitializePPF(args.color_hints_proxy.target, &ppf)) {
-        std::cerr
-            << "Failed to initialize decoding with the given color hints\n";
-        exit(EXIT_FAILURE);
-      }
-      codec = jxl::extras::Codec::kPNM;
-      args.lossless_jpeg = JXL_FALSE;
-      pixels = ppf.info.xsize * ppf.info.ysize;
-      try_non_streaming = false;
-    }
-  }
-  if (try_non_streaming) {
-    // Loading the input.
-    // Depending on flags-settings, we want to either load a JPEG and
-    // faithfully convert it to JPEG XL, or load (JPEG or non-JPEG)
-    // pixel data.
-    jpegxl::tools::FileWrapper f(args.file_in, "rb");
-    if (!f) {
-      std::cerr << "Reading image data failed.\n";
-      exit(EXIT_FAILURE);
-    }
-    if (!jpegxl::tools::ReadFile(f, &image_data)) {
-      std::cerr << "Reading image data failed.\n";
-      exit(EXIT_FAILURE);
-    }
-    input_bytes = image_data.size();
-    if (!jpegxl::tools::IsJPG(image_data)) args.lossless_jpeg = JXL_FALSE;
-    ProcessFlags(codec, ppf, jpeg_bytes, &cmdline, &args, &params);
-    if (!FROM_JXL_BOOL(args.lossless_jpeg)) {
-      const double t0 = jxl::Now();
-      jxl::Status status = jxl::extras::DecodeBytes(
-          jxl::Bytes(image_data), args.color_hints_proxy.target, &ppf, nullptr,
-          &codec);
-
-      if (!status) {
-        std::cerr << "Getting pixel data failed.\n";
-        exit(EXIT_FAILURE);
-      }
-      if (ppf.frames.empty()) {
-        std::cerr << "No frames on input file.\n";
-        exit(EXIT_FAILURE);
-      }
-      pixels = ppf.info.xsize * ppf.info.ysize;
-      const double t1 = jxl::Now();
-      decode_mps = pixels * ppf.info.num_color_channels * 1E-6 / (t1 - t0);
-    }
-
-    if (FROM_JXL_BOOL(args.lossless_jpeg) && jpegxl::tools::IsJPG(image_data)) {
-      if (!cmdline.GetOption(args.opt_lossless_jpeg_id)->matched()) {
-        std::cerr << "Note: Implicit-default for JPEG is lossless-transcoding. "
-                  << "To silence this message, set --lossless_jpeg=(1|0).\n";
-      }
-      jpeg_bytes = &image_data;
-      if (args.allow_jpeg_reconstruction) {
-        (void)args.color_hints_proxy.target.Foreach([](const std::string& key,
-                                                       const std::string& value)
-                                                        -> jxl::Status {
-          if (value.empty()) {
-            if (key != "jumbf") {
-              std::cerr
-                  << "Cannot strip " << key
-                  << " metadata, try setting --allow_jpeg_reconstruction=0. "
-                     "Note that with that setting byte exact reconstruction "
-                     "of the JPEG file won't be possible.\n";
-              exit(EXIT_FAILURE);
-            }
-          }
-          return true;
-        });
-      }
-    }
-  }
-
-  ProcessFlags(codec, ppf, jpeg_bytes, &cmdline, &args, &params);
-
-  if (!args.quiet) {
-    PrintMode(ppf, decode_mps, input_bytes, args, cmdline);
-  }
-
-  if (!ppf.metadata.exif.empty()) {
-    jxl::InterpretExif(ppf.metadata.exif, &ppf.info.orientation);
-  }
-
-  if (!ppf.metadata.exif.empty() || !ppf.metadata.xmp.empty() ||
-      !ppf.metadata.jhgm.empty() || !ppf.metadata.jumbf.empty() ||
-      !ppf.metadata.iptc.empty() ||
-      (FROM_JXL_BOOL(args.lossless_jpeg) &&
-       FROM_JXL_BOOL(args.allow_jpeg_reconstruction))) {
-    if (args.container == jxl::Override::kDefault) {
-      args.container = jxl::Override::kOn;
-    } else if (args.container == jxl::Override::kOff) {
-      cmdline.VerbosePrintf(
-          1, "Stripping all metadata due to explicit container=0\n");
-      ppf.metadata.exif.clear();
-      ppf.metadata.xmp.clear();
-      ppf.metadata.jumbf.clear();
-      ppf.metadata.jhgm.clear();
-      ppf.metadata.iptc.clear();
-      args.allow_jpeg_reconstruction = JXL_FALSE;
-    }
-  }
-
-  size_t num_worker_threads = JxlThreadParallelRunnerDefaultNumWorkerThreads();
-  int64_t flag_num_worker_threads = args.num_threads;
-  if (flag_num_worker_threads > -1) {
-    num_worker_threads = flag_num_worker_threads;
-  }
-  JxlThreadParallelRunnerPtr runner = JxlThreadParallelRunnerMake(
-      /*memory_manager=*/nullptr, num_worker_threads);
-  params.runner = JxlThreadParallelRunner;
-  params.runner_opaque = runner.get();
-
-  if (args.streaming_input) {
-    params.options.emplace_back(JXL_ENC_FRAME_SETTING_BUFFERING,
-                                static_cast<int64_t>(3), 0);
-  }
-
-  jpegxl::tools::SpeedStats stats;
-  jpegxl::tools::JxlOutputProcessor output_processor;
-  bool have_file_out = (args.file_out != nullptr);
-  if (args.streaming_output) {
-    if (have_file_out && !args.disable_output &&
-        !output_processor.SetOutputPath(args.file_out)) {
-      return EXIT_FAILURE;
-    }
-    params.output_processor = output_processor.GetOutputProcessor();
-  }
-  std::vector<uint8_t> compressed;
-  for (size_t num_rep = 0; num_rep < args.num_reps; ++num_rep) {
-    if (args.streaming_output) {
-      output_processor.Seek(0);
-      output_processor.SetFinalizedPosition(0);
-    }
-    const double t0 = jxl::Now();
-    if (!EncodeImageJXL(params, ppf, jpeg_bytes,
-                        args.streaming_output ? nullptr : &compressed)) {
-      fprintf(stderr, "EncodeImageJXL() failed.\n");
-      return EXIT_FAILURE;
-    }
-    const double t1 = jxl::Now();
-    stats.NotifyElapsed(t1 - t0);
-    stats.SetImageSize(ppf.info.xsize, ppf.info.ysize);
-  }
-  size_t compressed_size = args.streaming_output
-                               ? output_processor.finalized_position
-                               : compressed.size();
-
-  if (!args.streaming_output && have_file_out && !args.disable_output) {
-    if (!jpegxl::tools::WriteFile(args.file_out, compressed)) {
-      std::cerr << "Could not write jxl file.\n";
-      return EXIT_FAILURE;
-    }
-  }
-  if (!args.quiet) {
-    if (compressed_size < 100000) {
-      cmdline.VerbosePrintf(0, "Compressed to %" PRIuS " bytes ",
-                            compressed_size);
-    } else {
-      cmdline.VerbosePrintf(0, "Compressed to %.1f kB ",
-                            compressed_size * 0.001);
-    }
-    // For lossless jpeg-reconstruction, we don't print some stats, since we
-    // don't have easy access to the image dimensions.
-    if (args.container == jxl::Override::kOn) {
-      cmdline.VerbosePrintf(0, "including container ");
-    }
-    if (!FROM_JXL_BOOL(args.lossless_jpeg)) {
-      const double bpp =
-          static_cast<double>(compressed_size * jxl::kBitsPerByte) / pixels;
-      cmdline.VerbosePrintf(0, "(%.3f bpp%s).\n", bpp / ppf.num_frames(),
-                            ppf.num_frames() == 1 ? "" : "/frame");
-      JPEGXL_TOOLS_CHECK(stats.Print(num_worker_threads));
-    } else {
-      cmdline.VerbosePrintf(0, "\n");
-    }
-  }
+  std::vector<uint8_t> compressed(1024);
+  uint8_t* next_out = compressed.data();
+  size_t avail_out = compressed.size();
+  JxlEncoderProcessOutput(enc.get(), &next_out, &avail_out);
   return EXIT_SUCCESS;
 }
